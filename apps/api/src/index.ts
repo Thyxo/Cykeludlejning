@@ -114,7 +114,7 @@ app.post("/rentals", requireAuth, asyncRoute(async (req, res) => {
     days: z.number().int().min(1),
     paymentMethod: z.enum(["MP", "KT"]),
     acceptedTerms: z.boolean(),
-    signaturePng: z.string().min(100)
+    signaturePng: z.string().min(100, "Lejer skal underskrive kontrakten")
   }).parse(req.body);
   if (!data.acceptedTerms) return res.status(400).json({ error: "Lejebetingelser skal accepteres" });
   if (!data.bikeSelections?.length && !data.bikeIds?.length) return res.status(400).json({ error: "Vælg mindst ét produkt" });
