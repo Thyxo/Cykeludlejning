@@ -4,7 +4,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { calculateProductPrice } from "./pricing.js";
+import { calculateProductPrice, type PriceProduct } from "./pricing.js";
 
 const app = express();
 const prisma = new PrismaClient();
@@ -78,8 +78,8 @@ app.post("/bikes/return", requireAuth, async (req, res) => {
 app.post("/pricing", requireAuth, async (req, res) => {
   const { productIds, days } = z.object({ productIds: z.array(z.string()), days: z.number().int().min(1) }).parse(req.body);
   const products = await prisma.product.findMany({ where: { id: { in: productIds } } });
-  const lines = products.map((product) => ({ product, ...calculateProductPrice(product, days) }));
-  res.json({ total: lines.reduce((sum, line) => sum + line.total, 0), lines });
+  const lines = products.map((product: PriceProduct) => ({ product, ...calculateProductPrice(product, days) }));
+  res.json({ total: lines.reduce((sum: number, line: { total: number }) => sum + line.total, 0), lines });
 });
 
 app.post("/rentals", requireAuth, async (req, res) => {
@@ -98,11 +98,11 @@ app.post("/rentals", requireAuth, async (req, res) => {
   const bikes = await prisma.bike.findMany({ where: { id: { in: data.bikeIds }, status: "HOME" }, include: { product: true } });
   if (bikes.length !== data.bikeIds.length) return res.status(409).json({ error: "En eller flere cykler er allerede udlejet" });
 
-  const items = bikes.map((bike) => {
+  const items = bikes.map((bike: { id: string; product: PriceProduct }) => {
     const price = calculateProductPrice(bike.product, data.days).total;
     return { bikeId: bike.id, productName: bike.product.name, priceDkk: price };
   });
-  const priceDkk = items.reduce((sum, item) => sum + item.priceDkk, 0);
+  const priceDkk = items.reduce((sum: number, item: { priceDkk: number }) => sum + item.priceDkk, 0);
   const expectedReturn = new Date();
   expectedReturn.setDate(expectedReturn.getDate() + data.days);
 
