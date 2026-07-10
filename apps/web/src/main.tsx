@@ -10,7 +10,7 @@ type Product = { id: string; name: string; dayPrice: number; weekPrice: number |
 type Bike = { id: string; status: "HOME" | "RENTED"; product: Product; activeRental?: Rental | null };
 type Rental = { id: string; renterName: string; address: string; phone: string; days: number; priceDkk: number; paymentMethod: "MP" | "KT"; rentalDate: string; expectedReturn: string; items: { bikeId: string; productName: string; priceDkk: number }[] };
 type LockCode = { id: string; name: string; code: string };
-type ProductLine = { productId: string; quantity: number };
+type ProductLine = { id: string; productId: string; bikeId: string };
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
 const terms = {
@@ -132,7 +132,7 @@ function App() {
     <header><div><strong>Samsø Cykeludlejning</strong><span>{new Date().toLocaleDateString("da-DK")}</span></div><button onClick={() => load()}>Opdater</button></header>
     {error && <p className="toast">{error}</p>}
     <section className="screen">
-      {tab === "kontrakt" && <Contract bikes={bikes} products={products} onSaved={load} onError={setError} />}
+      {tab === "kontrakt" && <Contract products={products} onSaved={load} onError={setError} />}
       {tab === "lager" && <Inventory bikes={bikes} onSaved={load} />}
       {tab === "historik" && <History rentals={rentals} />}
       {tab === "laase" && <Locks locks={locks} onSaved={load} />}
@@ -152,54 +152,56 @@ function Login({ onLogin }: { onLogin: () => void }) {
   </form></main>;
 }
 
-function Contract({ bikes, products, onSaved, onError }: { bikes: Bike[]; products: Product[]; onSaved: () => void; onError: (msg: string) => void }) {
+function Contract({ products, onSaved, onError }: { products: Product[]; onSaved: () => void; onError: (msg: string) => void }) {
   const [lines, setLines] = useState<ProductLine[]>([]);
+  const [productQuery, setProductQuery] = useState("");
   const [daysInput, setDaysInput] = useState("1");
   const [form, setForm] = useState({ renterName: "", address: "", phone: "", paymentMethod: "MP", acceptedTerms: false, signaturePng: "" });
   const [showTerms, setShowTerms] = useState(false);
-  const home = bikes.filter((bike) => bike.status === "HOME");
   const days = Math.max(1, Number.parseInt(daysInput || "1", 10) || 1);
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
-  const availableByProduct = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const bike of home) counts.set(bike.product.id, (counts.get(bike.product.id) || 0) + 1);
-    return counts;
-  }, [home]);
-  const selectedBikeIds = useMemo(() => lines.flatMap((line) => home.filter((bike) => bike.product.id === line.productId).slice(0, line.quantity).map((bike) => bike.id)), [home, lines]);
+  const productResults = useMemo(() => {
+    const query = productQuery.trim().toLowerCase();
+    if (!query) return products.slice(0, 6);
+    return products.filter((product) => product.name.toLowerCase().includes(query)).slice(0, 6);
+  }, [productQuery, products]);
   const price = lines.reduce((sum, line) => {
     const product = productById.get(line.productId);
-    return product ? sum + line.quantity * priceProduct(product, days) : sum;
+    return product ? sum + priceProduct(product, days) : sum;
   }, 0);
-  const addProduct = (productId: string) => {
-    if (!productId) return;
-    setLines((current) => {
-      const available = availableByProduct.get(productId) || 0;
-      if (!available) return current;
-      const existing = current.find((line) => line.productId === productId);
-      if (existing) return current.map((line) => line.productId === productId ? { ...line, quantity: Math.min(available, line.quantity + 1) } : line);
-      return [...current, { productId, quantity: 1 }];
-    });
+  const addProduct = (product: Product) => {
+    setLines((current) => [...current, { id: crypto.randomUUID(), productId: product.id, bikeId: "" }]);
+    setProductQuery("");
   };
-  const setQuantity = (productId: string, quantity: number) => {
-    const available = availableByProduct.get(productId) || 0;
-    const nextQuantity = Math.min(available, Math.max(0, quantity));
-    setLines((current) => nextQuantity === 0 ? current.filter((line) => line.productId !== productId) : current.map((line) => line.productId === productId ? { ...line, quantity: nextQuantity } : line));
+  const updateLine = (id: string, bikeId: string) => {
+    setLines((current) => current.map((line) => line.id === id ? { ...line, bikeId } : line));
+  };
+  const removeLine = (id: string) => {
+    setLines((current) => current.filter((line) => line.id !== id));
   };
   const save = async () => {
     try {
-      const selectedCount = lines.reduce((sum, line) => sum + line.quantity, 0);
-      if (!selectedCount) throw new Error("Vælg mindst ét produkt");
-      if (selectedBikeIds.length !== selectedCount) throw new Error("Der er ikke nok ledige produkter på lager");
-      await api("/rentals", { method: "POST", body: JSON.stringify({ ...form, days, bikeIds: selectedBikeIds, paymentMethod: form.paymentMethod }) });
-      setLines([]); setDaysInput("1"); setForm({ renterName: "", address: "", phone: "", paymentMethod: "MP", acceptedTerms: false, signaturePng: "" }); onSaved();
+      if (!lines.length) throw new Error("Vælg mindst ét produkt");
+      if (lines.some((line) => !line.bikeId.trim())) throw new Error("Skriv nr. på alle valgte produkter");
+      await api("/rentals", {
+        method: "POST",
+        body: JSON.stringify({
+          ...form,
+          days,
+          bikeSelections: lines.map((line) => ({ productId: line.productId, bikeId: line.bikeId.trim() })),
+          paymentMethod: form.paymentMethod
+        })
+      });
+      setLines([]); setProductQuery(""); setDaysInput("1"); setForm({ renterName: "", address: "", phone: "", paymentMethod: "MP", acceptedTerms: false, signaturePng: "" }); onSaved();
     } catch (err) { onError((err as Error).message); }
   };
   return <section><h2>Lynkontrakt</h2>
     <label>Navn<input value={form.renterName} onChange={(e) => setForm({ ...form, renterName: e.target.value })} /></label>
     <label>Adresse<input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></label>
     <label>Telefonnummer<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
-    <label>Produkt<select onChange={(e) => { addProduct(e.target.value); e.currentTarget.value = ""; }} defaultValue=""><option value="">Vælg produkt</option>{products.map((product) => <option value={product.id} disabled={(availableByProduct.get(product.id) || 0) === 0} key={product.id}>{product.name} ({availableByProduct.get(product.id) || 0} ledige)</option>)}</select></label>
-    <div className="cards">{lines.map((line) => { const product = productById.get(line.productId); if (!product) return null; return <article className="productLine" key={line.productId}><div><strong>{product.name}</strong><small>{line.quantity} x {priceProduct(product, days)} kr</small></div><div className="lineControls"><button type="button" onClick={() => setQuantity(line.productId, line.quantity - 1)}>-</button><span>{line.quantity}</span><button type="button" onClick={() => setQuantity(line.productId, line.quantity + 1)}>+</button></div></article>; })}</div>
+    <label>Produkt<input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Søg produkt" /></label>
+    <div className="productResults">{productResults.map((product) => <button type="button" key={product.id} onClick={() => addProduct(product)}>{product.name}</button>)}</div>
+    <div className="cards">{lines.map((line) => { const product = productById.get(line.productId); if (!product) return null; return <article className="productLine manualLine" key={line.id}><div><strong>{product.name}</strong><small>{priceProduct(product, days)} kr</small></div><label>Nr.<input value={line.bikeId} onChange={(e) => updateLine(line.id, e.target.value)} placeholder="Cykel nr." /></label><button type="button" onClick={() => removeLine(line.id)}>Fjern</button></article>; })}</div>
     <label>Periode<input inputMode="numeric" pattern="[0-9]*" value={daysInput} onChange={(e) => setDaysInput(e.target.value.replace(/\D/g, ""))} onBlur={() => setDaysInput((value) => value || "1")} /></label>
     <div className="price">Pris i DKK <strong>{price} kr</strong></div>
     <label>Betalingsmåde<select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}><option>MP</option><option>KT</option></select></label>

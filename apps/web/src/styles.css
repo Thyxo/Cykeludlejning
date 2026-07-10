@@ -39,6 +39,12 @@ section, aside { display: grid; gap: 12px; background: #fff; border: 1px solid #
 .productLine div:first-child { display: grid; gap: 3px; min-width: 0; }
 .productLine strong { font-size: 0.95rem; overflow-wrap: anywhere; }
 .productLine small { color: #5a675e; }
+.productResults { display: grid; gap: 8px; }
+.productResults button { text-align: left; background: #eef5ee; }
+.manualLine { grid-template-columns: minmax(0, 1fr) minmax(96px, 130px) auto; }
+.manualLine label { gap: 4px; }
+.manualLine input { min-height: 40px; padding: 8px 10px; }
+.manualLine > button { background: #f4e8e8; color: #6f2424; }
 .lineControls { display: grid; grid-template-columns: repeat(3, 40px); gap: 6px; align-items: center; }
 .lineControls button { min-width: 40px; min-height: 40px; padding: 0; }
 .lineControls span { text-align: center; font-weight: 800; }
@@ -71,6 +77,7 @@ section, aside { display: grid; gap: 12px; background: #fff; border: 1px solid #
   .bike { grid-template-columns: auto 72px 1fr; }
   .bike small { grid-column: 3; }
   .lock { grid-template-columns: 1fr; }
+  .manualLine { grid-template-columns: 1fr; }
   .signature { height: 150px; }
   .price { padding: 12px; }
   .price strong { font-size: 1.7rem; }

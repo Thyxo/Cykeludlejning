@@ -96,16 +96,31 @@ app.post("/rentals", requireAuth, async (req, res) => {
     renterName: z.string().min(1),
     address: z.string().min(1),
     phone: z.string().min(1),
-    bikeIds: z.array(z.string()).min(1),
+    bikeIds: z.array(z.string()).min(1).optional(),
+    bikeSelections: z.array(z.object({ productId: z.string().min(1), bikeId: z.string().min(1) })).min(1).optional(),
     days: z.number().int().min(1),
     paymentMethod: z.enum(["MP", "KT"]),
     acceptedTerms: z.boolean(),
     signaturePng: z.string().min(100)
   }).parse(req.body);
   if (!data.acceptedTerms) return res.status(400).json({ error: "Lejebetingelser skal accepteres" });
+  if (!data.bikeSelections?.length && !data.bikeIds?.length) return res.status(400).json({ error: "Vælg mindst ét produkt" });
+  const requestedBikeIds = data.bikeSelections?.map((selection) => selection.bikeId.trim()) || data.bikeIds || [];
+  if (new Set(requestedBikeIds).size !== requestedBikeIds.length) return res.status(400).json({ error: "Samme nr. er valgt flere gange" });
 
-  const bikes = await prisma.bike.findMany({ where: { id: { in: data.bikeIds }, status: "HOME" }, include: { product: true } });
-  if (bikes.length !== data.bikeIds.length) return res.status(409).json({ error: "En eller flere cykler er allerede udlejet" });
+  const bikes = data.bikeSelections?.length
+    ? await Promise.all(data.bikeSelections.map(async (selection) => {
+      const product = await prisma.product.findUnique({ where: { id: selection.productId } });
+      if (!product) throw new Error("Produktet findes ikke");
+      const bikeId = selection.bikeId.trim();
+      const existing = await prisma.bike.findUnique({ where: { id: bikeId }, include: { product: true } });
+      if (existing && existing.status !== "HOME") throw new Error(`${bikeId} er allerede udlejet`);
+      if (existing && existing.productId !== selection.productId) throw new Error(`${bikeId} findes allerede som ${existing.product.name}`);
+      return existing || await prisma.bike.create({ data: { id: bikeId, productId: selection.productId }, include: { product: true } });
+    }))
+    : await prisma.bike.findMany({ where: { id: { in: requestedBikeIds }, status: "HOME" }, include: { product: true } });
+  const expectedCount = requestedBikeIds.length;
+  if (bikes.length !== expectedCount) return res.status(409).json({ error: "En eller flere cykler er allerede udlejet" });
 
   const items = bikes.map((bike: { id: string; product: PriceProduct }) => {
     const price = calculateProductPrice(bike.product, data.days).total;
@@ -130,7 +145,7 @@ app.post("/rentals", requireAuth, async (req, res) => {
     },
     include: { items: true }
   });
-  await prisma.bike.updateMany({ where: { id: { in: data.bikeIds } }, data: { status: "RENTED", activeRentalId: rental.id } });
+  await prisma.bike.updateMany({ where: { id: { in: requestedBikeIds } }, data: { status: "RENTED", activeRentalId: rental.id } });
   res.status(201).json(rental);
 });
 
