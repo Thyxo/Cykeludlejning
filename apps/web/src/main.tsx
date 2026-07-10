@@ -29,8 +29,20 @@ const terms = {
   EN: "If the item is lost, the hirer must inform the owner immediately. The hirer is at all times liable to the owner to pay damages for any damage occurring during the hire period. The item is hired out at the hirer's own risk, including responsibility before public authorities. In case of damage, no claims can be made against the owner. Only the hirer's own insurance applies."
 };
 
+function getSessionToken() {
+  return localStorage.getItem("sessionToken") || "";
+}
+
+function setSessionToken(token: string) {
+  if (token) localStorage.setItem("sessionToken", token);
+}
+
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API}${path}`, { credentials: "include", headers: { "Content-Type": "application/json" }, ...options });
+  const headers = new Headers(options.headers);
+  headers.set("Content-Type", "application/json");
+  const token = getSessionToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(`${API}${path}`, { ...options, credentials: "include", headers });
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Der skete en fejl");
   return response.json();
 }
@@ -118,6 +130,16 @@ function Signature({ value, onChange }: { value: string; onChange: (png: string)
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
   };
+  const finish = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawing.current) return;
+    drawing.current = false;
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Some mobile browsers release pointer capture before React receives the final event.
+    }
+    onChange(event.currentTarget.toDataURL("image/png"));
+  };
 
   return <div>
     <canvas
@@ -133,15 +155,9 @@ function Signature({ value, onChange }: { value: string; onChange: (png: string)
         ctx.moveTo(p.x, p.y);
       }}
       onPointerMove={move}
-      onPointerUp={(e) => {
-        if (!drawing.current) return;
-        drawing.current = false;
-        e.currentTarget.releasePointerCapture(e.pointerId);
-        onChange(e.currentTarget.toDataURL("image/png"));
-      }}
-      onPointerCancel={() => {
-        drawing.current = false;
-      }}
+      onPointerUp={finish}
+      onPointerCancel={finish}
+      onLostPointerCapture={finish}
     />
     <button className="ghost" type="button" onClick={() => { const c = canvasRef.current!; const ctx = c.getContext("2d")!; ctx.clearRect(0, 0, c.clientWidth, c.clientHeight); onChange(""); }}>Ryd underskrift</button>
   </div>;
@@ -172,7 +188,7 @@ function App() {
     if (failed?.status === "rejected") setError((failed.reason as Error).message);
   };
 
-  useEffect(() => { api("/auth/me").then(() => { setAuthed(true); load(); }).catch(() => setAuthed(false)); }, []);
+  useEffect(() => { api("/auth/me").then(() => { setAuthed(true); load(); }).catch(() => { localStorage.removeItem("sessionToken"); setAuthed(false); }); }, []);
   if (!authed) return <Login onLogin={() => { setAuthed(true); load(); }} />;
 
   return <main className="app">
@@ -194,7 +210,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
   const [username, setUsername] = useState("cykel");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  return <main className="login"><form onSubmit={async (e) => { e.preventDefault(); try { await api("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }); onLogin(); } catch (err) { setError((err as Error).message); } }}>
+  return <main className="login"><form onSubmit={async (e) => { e.preventDefault(); try { const result = await api<{ token: string }>("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }); setSessionToken(result.token); onLogin(); } catch (err) { setError((err as Error).message); } }}>
     <h1>Cykeludlejning</h1><input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Brugernavn" /><input value={password} type="password" onChange={(e) => setPassword(e.target.value)} placeholder="Kodeord" /><button>Log ind</button>{error && <p className="toast">{error}</p>}
   </form></main>;
 }

@@ -36,7 +36,8 @@ function usesHttpsCookie(req: express.Request) {
 }
 
 function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const token = req.cookies.session;
+  const bearerToken = req.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const token = req.cookies.session || bearerToken;
   try {
     jwt.verify(token, jwtSecret);
     next();
@@ -58,7 +59,7 @@ app.post("/auth/login", (req, res) => {
     secure: crossSiteCookie,
     maxAge: 180 * 24 * 60 * 60 * 1000
   });
-  res.json({ ok: true });
+  res.json({ ok: true, token });
 });
 
 app.post("/auth/logout", (req, res) => {
