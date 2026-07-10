@@ -230,7 +230,6 @@ function Contract({ products, onSaved, onError }: { products: Product[]; onSaved
     try {
       if (!lines.length) throw new Error("Vælg mindst ét produkt");
       if (lines.some((line) => !line.bikeId.trim())) throw new Error("Skriv nr. på alle valgte produkter");
-      if (form.signaturePng.length < 100) throw new Error("Lejer skal underskrive kontrakten");
       await api("/rentals", {
         method: "POST",
         body: JSON.stringify({
