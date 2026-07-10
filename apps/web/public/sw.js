@@ -1,4 +1,4 @@
-const CACHE = "cykeludlejning-v1";
+const CACHE = "cykeludlejning-v2";
 const ASSETS = ["/", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {

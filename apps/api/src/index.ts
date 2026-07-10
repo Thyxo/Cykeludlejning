@@ -13,6 +13,7 @@ const appOrigin = process.env.APP_ORIGIN || "http://localhost:5173";
 const username = process.env.APP_USERNAME || "cykel";
 const password = process.env.APP_PASSWORD || "sommer";
 
+app.set("trust proxy", 1);
 app.use(cors({ origin: appOrigin, credentials: true }));
 app.use(express.json({ limit: "8mb" }));
 app.use(cookieParser());
@@ -33,16 +34,24 @@ app.post("/auth/login", (req, res) => {
     return res.status(401).json({ error: "Forkert brugernavn eller kodeord" });
   }
   const token = jwt.sign({ sub: "staff" }, jwtSecret, { expiresIn: "180d" });
+  const appIsHttps = appOrigin.startsWith("https://");
+  const requestIsHttps = req.secure || req.get("x-forwarded-proto") === "https";
+  const crossSiteCookie = appIsHttps || requestIsHttps;
   res.cookie("session", token, {
     httpOnly: true,
-    sameSite: "none",
-    secure: process.env.NODE_ENV === "production",
+    sameSite: crossSiteCookie ? "none" : "lax",
+    secure: crossSiteCookie,
     maxAge: 180 * 24 * 60 * 60 * 1000
   });
   res.json({ ok: true });
 });
 
-app.post("/auth/logout", (_req, res) => res.clearCookie("session").json({ ok: true }));
+app.post("/auth/logout", (req, res) => {
+  const appIsHttps = appOrigin.startsWith("https://");
+  const requestIsHttps = req.secure || req.get("x-forwarded-proto") === "https";
+  const crossSiteCookie = appIsHttps || requestIsHttps;
+  res.clearCookie("session", { sameSite: crossSiteCookie ? "none" : "lax", secure: crossSiteCookie }).json({ ok: true });
+});
 app.get("/auth/me", requireAuth, (_req, res) => res.json({ username: "staff" }));
 
 app.get("/products", requireAuth, async (_req, res) => {

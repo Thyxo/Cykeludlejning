@@ -5,8 +5,8 @@
   font-size: 16px;
 }
 * { box-sizing: border-box; }
-html, body, #root { width: 100%; min-height: 100%; }
-body { margin: 0; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+html, body, #root { width: 100%; min-height: 100%; overflow: hidden; }
+body { margin: 0; overscroll-behavior: none; -webkit-text-size-adjust: 100%; touch-action: manipulation; }
 button, input, select { font: inherit; }
 button { border: 0; border-radius: 8px; padding: 12px 14px; background: #dde7dc; color: #17201a; font-weight: 700; }
 input, select { width: 100%; border: 1px solid #cbd6cb; border-radius: 8px; padding: 12px; background: #fff; min-height: 46px; }
@@ -14,7 +14,7 @@ label { display: grid; gap: 6px; font-weight: 700; }
 h1, h2, h3, p { margin-top: 0; }
 h1 { font-size: 1.75rem; }
 h2 { font-size: 1.25rem; }
-.app { height: 100dvh; display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
+.app { position: fixed; inset: 0; height: 100dvh; display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
 header { display: flex; justify-content: space-between; align-items: center; padding: 14px max(16px, env(safe-area-inset-left)); background: #0f5132; color: white; }
 header div { display: grid; gap: 2px; }
 header span { color: #d9efe0; font-size: 13px; }
@@ -35,6 +35,13 @@ section, aside { display: grid; gap: 12px; background: #fff; border: 1px solid #
 .price strong { font-size: clamp(24px, 5vw, 42px); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 36px; }
 .chip { background: #173f78; color: white; padding: 8px 10px; }
+.productLine { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 10px; border: 1px solid #d9e1d9; border-radius: 8px; background: #f9fbf8; }
+.productLine div:first-child { display: grid; gap: 3px; min-width: 0; }
+.productLine strong { font-size: 0.95rem; overflow-wrap: anywhere; }
+.productLine small { color: #5a675e; }
+.lineControls { display: grid; grid-template-columns: repeat(3, 40px); gap: 6px; align-items: center; }
+.lineControls button { min-width: 40px; min-height: 40px; padding: 0; }
+.lineControls span { text-align: center; font-weight: 800; }
 .check { grid-template-columns: auto 1fr; align-items: center; cursor: pointer; }
 .check input { width: 24px; min-height: 24px; }
 .signature { width: 100%; height: 180px; background: #fff; border: 2px solid #222; border-radius: 8px; touch-action: none; }

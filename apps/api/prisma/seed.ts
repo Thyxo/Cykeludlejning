@@ -3,22 +3,37 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 const products = [
-  ["Voksencykel 28/26 med 7 gear", 90, 450, 800],
-  ["Børnecykel 24", 70, 350, 500],
-  ["Børnecykel 20 med 3 gear", 70, 350, 500],
-  ["Børnecykel 18 uden gear", 60, 300, 400],
-  ["MTB 29", 200, 1000, 2000],
-  ["Elcykel centermotor op til 80 km", 325, 1700, null],
-  ["Elcykel forhjulsmotor op til 40/50 km", 225, 1250, 2250],
-  ["Ladcykel med el til 2 børn/cargobike", 450, 2250, null],
-  ["Hundetrailer/Dogtrailer", 90, 450, 800],
-  ["Børnetrailer 2 børn max 40 kg", 80, 400, 700],
-  ["Barnesæde max 25 kg", 30, 150, 200],
-  ["Hundekurv", 50, 250, null],
-  ["Hjelm", 25, 125, 200],
-  ["Levering/afhentning", 150, null, null],
-  ["Aftencykel (16-24)", 50, null, null]
+  ["Voksencykel 28”/26” med 7 gear", 90, 450, 800, "VOK", 40],
+  ["Børnecykel 24”", 70, 350, 500, "B24", 10],
+  ["Børnecykel 20” med 3 gear", 70, 350, 500, "B20", 10],
+  ["Børnecykel 18” uden gear", 60, 300, 400, "B18", 10],
+  ["MTB 29”", 200, 1000, 2000, "MTB", 8],
+  ["Elcykel centermotor optil 80 km", 325, 1700, null, "ELC", 8],
+  ["Elcykel forhjulsmotor optil 40/50 km", 225, 1250, 2250, "ELF", 8],
+  ["Ladcykel med el til 2 børn/cargobike", 450, 2250, null, "LAD", 4],
+  ["Hundetrailer / Dogtrailer", 90, 450, 800, "HUN", 5],
+  ["Børnetrailer 2 børn max 40 kg", 80, 400, 700, "BT", 5],
+  ["Barnesæde max 25 kg / child seat", 30, 150, 200, "BS", 8],
+  ["Hundekurv", 50, 250, null, "HK", 5],
+  ["Hjelm / Helmet", 25, 125, 200, "HJ", 20],
+  ["Levering/afhentning fra", 150, null, null, "LEV", 50],
+  ["Aftencykel (16-24)", 50, null, null, "AFT", 20]
 ] as const;
+
+const productAliases = new Map<string, string[]>([
+  ["Voksencykel 28”/26” med 7 gear", ["Voksencykel 28/26 med 7 gear"]],
+  ["Børnecykel 24”", ["BÃ¸rnecykel 24"]],
+  ["Børnecykel 20” med 3 gear", ["BÃ¸rnecykel 20 med 3 gear"]],
+  ["Børnecykel 18” uden gear", ["BÃ¸rnecykel 18 uden gear"]],
+  ["MTB 29”", ["MTB 29"]],
+  ["Elcykel centermotor optil 80 km", ["Elcykel centermotor op til 80 km"]],
+  ["Elcykel forhjulsmotor optil 40/50 km", ["Elcykel forhjulsmotor op til 40/50 km"]],
+  ["Ladcykel med el til 2 børn/cargobike", ["Ladcykel med el til 2 bÃ¸rn/cargobike"]],
+  ["Hundetrailer / Dogtrailer", ["Hundetrailer/Dogtrailer"]],
+  ["Børnetrailer 2 børn max 40 kg", ["BÃ¸rnetrailer 2 bÃ¸rn max 40 kg"]],
+  ["Barnesæde max 25 kg / child seat", ["BarnesÃ¦de max 25 kg"]],
+  ["Levering/afhentning fra", ["Levering/afhentning"]]
+]);
 
 const locks = [
   ["Kode 1", "616"],
@@ -30,21 +45,24 @@ const locks = [
 ] as const;
 
 async function main() {
-  for (const [name, dayPrice, weekPrice, twoWeekPrice] of products) {
-    await prisma.product.upsert({
-      where: { name },
-      create: { name, dayPrice, weekPrice, twoWeekPrice },
-      update: { dayPrice, weekPrice, twoWeekPrice }
-    });
-  }
+  for (const [name, dayPrice, weekPrice, twoWeekPrice, prefix, stock] of products) {
+    const existingProduct = await prisma.product.findUnique({ where: { name } });
+    const aliasProduct = existingProduct ? null : await prisma.product.findFirst({ where: { name: { in: productAliases.get(name) || [] } } });
+    const product = existingProduct
+      ? await prisma.product.update({ where: { id: existingProduct.id }, data: { dayPrice, weekPrice, twoWeekPrice } })
+      : aliasProduct
+        ? await prisma.product.update({ where: { id: aliasProduct.id }, data: { name, dayPrice, weekPrice, twoWeekPrice } })
+        : await prisma.product.create({ data: { name, dayPrice, weekPrice, twoWeekPrice } });
 
-  const adult = await prisma.product.findUniqueOrThrow({ where: { name: products[0][0] } });
-  for (let n = 100; n <= 140; n += 1) {
-    await prisma.bike.upsert({
-      where: { id: `D${n}` },
-      create: { id: `D${n}`, productId: adult.id },
-      update: {}
-    });
+    if (!prefix || !stock) continue;
+    for (let n = 1; n <= stock; n += 1) {
+      const id = `${prefix}${String(n).padStart(2, "0")}`;
+      await prisma.bike.upsert({
+        where: { id },
+        create: { id, productId: product.id },
+        update: {}
+      });
+    }
   }
 
   for (const [name, code] of locks) {

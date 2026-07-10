@@ -10,6 +10,7 @@ type Product = { id: string; name: string; dayPrice: number; weekPrice: number |
 type Bike = { id: string; status: "HOME" | "RENTED"; product: Product; activeRental?: Rental | null };
 type Rental = { id: string; renterName: string; address: string; phone: string; days: number; priceDkk: number; paymentMethod: "MP" | "KT"; rentalDate: string; expectedReturn: string; items: { bikeId: string; productName: string; priceDkk: number }[] };
 type LockCode = { id: string; name: string; code: string };
+type ProductLine = { productId: string; quantity: number };
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
 const terms = {
@@ -67,7 +68,7 @@ function Signature({ value, onChange }: { value: string; onChange: (png: string)
     resize();
     addEventListener("resize", resize);
     return () => removeEventListener("resize", resize);
-  }, []);
+  }, [value]);
 
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -102,9 +103,8 @@ function Signature({ value, onChange }: { value: string; onChange: (png: string)
         e.currentTarget.releasePointerCapture(e.pointerId);
         onChange(e.currentTarget.toDataURL("image/png"));
       }}
-      onPointerCancel={(e) => {
+      onPointerCancel={() => {
         drawing.current = false;
-        onChange(e.currentTarget.toDataURL("image/png"));
       }}
     />
     <button className="ghost" type="button" onClick={() => { const c = canvasRef.current!; const ctx = c.getContext("2d")!; ctx.clearRect(0, 0, c.clientWidth, c.clientHeight); onChange(""); }}>Ryd underskrift</button>
@@ -153,34 +153,62 @@ function Login({ onLogin }: { onLogin: () => void }) {
 }
 
 function Contract({ bikes, products, onSaved, onError }: { bikes: Bike[]; products: Product[]; onSaved: () => void; onError: (msg: string) => void }) {
-  const [bikeIds, setBikeIds] = useState<string[]>([]);
-  const [days, setDays] = useState(1);
+  const [lines, setLines] = useState<ProductLine[]>([]);
+  const [daysInput, setDaysInput] = useState("1");
   const [form, setForm] = useState({ renterName: "", address: "", phone: "", paymentMethod: "MP", acceptedTerms: false, signaturePng: "" });
   const [showTerms, setShowTerms] = useState(false);
-  const selected = bikes.filter((bike) => bikeIds.includes(bike.id));
-  const price = selected.reduce((sum, bike) => sum + priceProduct(bike.product, days), 0);
   const home = bikes.filter((bike) => bike.status === "HOME");
-  const productTotals = useMemo(() => products.map((p) => ({ product: p, count: selected.filter((b) => b.product.id === p.id).length })), [products, selected]);
+  const days = Math.max(1, Number.parseInt(daysInput || "1", 10) || 1);
+  const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
+  const availableByProduct = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const bike of home) counts.set(bike.product.id, (counts.get(bike.product.id) || 0) + 1);
+    return counts;
+  }, [home]);
+  const selectedBikeIds = useMemo(() => lines.flatMap((line) => home.filter((bike) => bike.product.id === line.productId).slice(0, line.quantity).map((bike) => bike.id)), [home, lines]);
+  const price = lines.reduce((sum, line) => {
+    const product = productById.get(line.productId);
+    return product ? sum + line.quantity * priceProduct(product, days) : sum;
+  }, 0);
+  const addProduct = (productId: string) => {
+    if (!productId) return;
+    setLines((current) => {
+      const available = availableByProduct.get(productId) || 0;
+      if (!available) return current;
+      const existing = current.find((line) => line.productId === productId);
+      if (existing) return current.map((line) => line.productId === productId ? { ...line, quantity: Math.min(available, line.quantity + 1) } : line);
+      return [...current, { productId, quantity: 1 }];
+    });
+  };
+  const setQuantity = (productId: string, quantity: number) => {
+    const available = availableByProduct.get(productId) || 0;
+    const nextQuantity = Math.min(available, Math.max(0, quantity));
+    setLines((current) => nextQuantity === 0 ? current.filter((line) => line.productId !== productId) : current.map((line) => line.productId === productId ? { ...line, quantity: nextQuantity } : line));
+  };
   const save = async () => {
     try {
-      await api("/rentals", { method: "POST", body: JSON.stringify({ ...form, days, bikeIds, paymentMethod: form.paymentMethod }) });
-      setBikeIds([]); setForm({ renterName: "", address: "", phone: "", paymentMethod: "MP", acceptedTerms: false, signaturePng: "" }); onSaved();
+      const selectedCount = lines.reduce((sum, line) => sum + line.quantity, 0);
+      if (!selectedCount) throw new Error("Vælg mindst ét produkt");
+      if (selectedBikeIds.length !== selectedCount) throw new Error("Der er ikke nok ledige produkter på lager");
+      await api("/rentals", { method: "POST", body: JSON.stringify({ ...form, days, bikeIds: selectedBikeIds, paymentMethod: form.paymentMethod }) });
+      setLines([]); setDaysInput("1"); setForm({ renterName: "", address: "", phone: "", paymentMethod: "MP", acceptedTerms: false, signaturePng: "" }); onSaved();
     } catch (err) { onError((err as Error).message); }
   };
-  return <div className="grid two"><section><h2>Lynkontrakt</h2>
+  return <section><h2>Lynkontrakt</h2>
     <label>Navn<input value={form.renterName} onChange={(e) => setForm({ ...form, renterName: e.target.value })} /></label>
     <label>Adresse<input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></label>
     <label>Telefonnummer<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
-    <label>Produkt<select onChange={(e) => e.target.value && setBikeIds([...new Set([...bikeIds, e.target.value])])} value=""><option value="">Vælg ledig cykel</option>{home.map((bike) => <option value={bike.id} key={bike.id}>{bike.id} · {bike.product.name}</option>)}</select></label>
-    <div className="chips">{selected.map((bike) => <button className="chip" key={bike.id} onClick={() => setBikeIds(bikeIds.filter((id) => id !== bike.id))}>{bike.id} x</button>)}</div>
-    <label>Periode<input type="number" min="1" value={days} onChange={(e) => setDays(Number(e.target.value))} /></label>
+    <label>Produkt<select onChange={(e) => { addProduct(e.target.value); e.currentTarget.value = ""; }} defaultValue=""><option value="">Vælg produkt</option>{products.map((product) => <option value={product.id} disabled={(availableByProduct.get(product.id) || 0) === 0} key={product.id}>{product.name} ({availableByProduct.get(product.id) || 0} ledige)</option>)}</select></label>
+    <div className="cards">{lines.map((line) => { const product = productById.get(line.productId); if (!product) return null; return <article className="productLine" key={line.productId}><div><strong>{product.name}</strong><small>{line.quantity} x {priceProduct(product, days)} kr</small></div><div className="lineControls"><button type="button" onClick={() => setQuantity(line.productId, line.quantity - 1)}>-</button><span>{line.quantity}</span><button type="button" onClick={() => setQuantity(line.productId, line.quantity + 1)}>+</button></div></article>; })}</div>
+    <label>Periode<input inputMode="numeric" pattern="[0-9]*" value={daysInput} onChange={(e) => setDaysInput(e.target.value.replace(/\D/g, ""))} onBlur={() => setDaysInput((value) => value || "1")} /></label>
     <div className="price">Pris i DKK <strong>{price} kr</strong></div>
     <label>Betalingsmåde<select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}><option>MP</option><option>KT</option></select></label>
     <label>Dato<input value={new Date().toLocaleDateString("da-DK")} readOnly /></label>
     <label>Lejer (underskrift)<Signature value={form.signaturePng} onChange={(signaturePng) => setForm({ ...form, signaturePng })} /></label>
     <label className="check"><input type="checkbox" checked={form.acceptedTerms} onChange={(e) => setForm({ ...form, acceptedTerms: e.target.checked })} /><span onClick={() => setShowTerms(true)}>Lejebetingelser accepteret</span></label>
     <button className="primary" onClick={save}>Gem kontrakt</button>
-  </section><aside><h2>Lommeregner</h2>{productTotals.filter((l) => l.count).map((line) => <p key={line.product.id}>{line.count} x {line.product.name}: <b>{line.count * priceProduct(line.product, days)} kr</b></p>)}<p>Forventet retur: <b>{new Date(Date.now() + days * 86400000).toLocaleDateString("da-DK")}</b></p></aside>{showTerms && <Terms onClose={() => setShowTerms(false)} />}</div>;
+    {showTerms && <Terms onClose={() => setShowTerms(false)} />}
+  </section>;
 }
 
 function Inventory({ bikes, onSaved }: { bikes: Bike[]; onSaved: () => void }) {
