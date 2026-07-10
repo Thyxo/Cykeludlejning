@@ -40,7 +40,10 @@ section, aside { display: grid; gap: 12px; background: #fff; border: 1px solid #
 .productLine strong { font-size: 0.95rem; overflow-wrap: anywhere; }
 .productLine small { color: #5a675e; }
 .productResults { display: grid; gap: 8px; }
-.productResults button { text-align: left; background: #eef5ee; }
+.productResults button { display: grid; gap: 3px; text-align: left; background: #eef5ee; }
+.productResults small, .hint { color: #5a675e; font-weight: 600; }
+.hint { margin: 0; padding: 10px 2px; }
+.selectedProducts { margin-top: 2px; }
 .manualLine { grid-template-columns: minmax(0, 1fr) minmax(96px, 130px) auto; }
 .manualLine label { gap: 4px; }
 .manualLine input { min-height: 40px; padding: 8px 10px; }

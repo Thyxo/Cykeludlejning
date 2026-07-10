@@ -13,6 +13,16 @@ type LockCode = { id: string; name: string; code: string };
 type ProductLine = { id: string; productId: string; bikeId: string };
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
+const productSearchAliases: Record<string, string[]> = {
+  voksen: ["voksencykel", "damecykel", "herrecykel"],
+  voksencykel: ["voksen"],
+  barn: ["bornecykel", "barnecykel", "junior", "boern"],
+  el: ["elcykel", "electric"],
+  elcykel: ["el"],
+  lad: ["ladcykel", "cargo", "cargobike"],
+  anhanger: ["trailer", "anhaenger"],
+  trailer: ["anhanger", "anhaenger"]
+};
 const terms = {
   DA: "Lejeren skal ved bortkomst af varen melde dette omgående til udlejeren. Lejeren er til enhver tid erstatningspligtig overfor udlejer ved skade opstået i udlejningsperioden. Varen er udlejet på eget ansvar, også over for offentlige myndigheder. I tilfælde af skade kan der ikke rejses krav mod udlejer. Kun egen forsikring er gældende.",
   DE: "Der Mieter hat bei Abhandenkommen der Waren dieses dem Vermieter umgehend mitzuteilen. Der Mieter ist immer dem Vermieter gegenüber ersatzverpflichtet wegen Schäden, die in der Vermietungsperiode entstanden sind. Das Mieten der Waren geschieht auf eigene Gefahr, auch gegenüber öffentlichen Behörden. Falls Schaden entsteht, kann gegen den Vermieter kein Anspruch erhoben werden. Nur eine eigene Versicherung gilt.",
@@ -40,6 +50,32 @@ function priceProduct(product: Product, days: number) {
   }
   total += rest * product.dayPrice;
   return total;
+}
+
+function normalizeSearch(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u00e6/g, "ae")
+    .replace(/\u00f8/g, "oe")
+    .replace(/\u00e5/g, "aa")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function productSearchText(product: Product) {
+  const normalizedName = normalizeSearch(product.name);
+  const extraTerms = Object.entries(productSearchAliases)
+    .filter(([term, aliases]) => normalizedName.includes(term) || aliases.some((alias) => normalizedName.includes(alias)))
+    .flatMap(([term, aliases]) => [term, ...aliases]);
+  return normalizeSearch([product.name, ...extraTerms].join(" "));
+}
+
+function productMatchesQuery(product: Product, query: string) {
+  const words = normalizeSearch(query).split(/\s+/).filter(Boolean);
+  const searchText = productSearchText(product);
+  return words.length > 0 && words.every((word) => searchText.includes(word));
 }
 
 function Signature({ value, onChange }: { value: string; onChange: (png: string) => void }) {
@@ -121,8 +157,19 @@ function App() {
   const [error, setError] = useState("");
 
   const load = async () => {
-    const [b, p, r, l] = await Promise.all([api<Bike[]>("/bikes"), api<Product[]>("/products"), api<Rental[]>("/rentals"), api<LockCode[]>("/locks")]);
-    setBikes(b); setProducts(p); setRentals(r); setLocks(l);
+    const [bikesResult, productsResult, rentalsResult, locksResult] = await Promise.allSettled([
+      api<Bike[]>("/bikes"),
+      api<Product[]>("/products"),
+      api<Rental[]>("/rentals"),
+      api<LockCode[]>("/locks")
+    ]);
+    if (bikesResult.status === "fulfilled") setBikes(bikesResult.value);
+    if (productsResult.status === "fulfilled") setProducts(productsResult.value);
+    if (rentalsResult.status === "fulfilled") setRentals(rentalsResult.value);
+    if (locksResult.status === "fulfilled") setLocks(locksResult.value);
+
+    const failed = [bikesResult, productsResult, rentalsResult, locksResult].find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") setError((failed.reason as Error).message);
   };
 
   useEffect(() => { api("/auth/me").then(() => { setAuthed(true); load(); }).catch(() => setAuthed(false)); }, []);
@@ -161,9 +208,9 @@ function Contract({ products, onSaved, onError }: { products: Product[]; onSaved
   const days = Math.max(1, Number.parseInt(daysInput || "1", 10) || 1);
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const productResults = useMemo(() => {
-    const query = productQuery.trim().toLowerCase();
-    if (!query) return products.slice(0, 6);
-    return products.filter((product) => product.name.toLowerCase().includes(query)).slice(0, 6);
+    const query = productQuery.trim();
+    if (!query) return products.slice(0, 8);
+    return products.filter((product) => productMatchesQuery(product, query)).slice(0, 8);
   }, [productQuery, products]);
   const price = lines.reduce((sum, line) => {
     const product = productById.get(line.productId);
@@ -199,9 +246,13 @@ function Contract({ products, onSaved, onError }: { products: Product[]; onSaved
     <label>Navn<input value={form.renterName} onChange={(e) => setForm({ ...form, renterName: e.target.value })} /></label>
     <label>Adresse<input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></label>
     <label>Telefonnummer<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
-    <label>Produkt<input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Søg produkt" /></label>
-    <div className="productResults">{productResults.map((product) => <button type="button" key={product.id} onClick={() => addProduct(product)}>{product.name}</button>)}</div>
-    <div className="cards">{lines.map((line) => { const product = productById.get(line.productId); if (!product) return null; return <article className="productLine manualLine" key={line.id}><div><strong>{product.name}</strong><small>{priceProduct(product, days)} kr</small></div><label>Nr.<input value={line.bikeId} onChange={(e) => updateLine(line.id, e.target.value)} placeholder="Cykel nr." /></label><button type="button" onClick={() => removeLine(line.id)}>Fjern</button></article>; })}</div>
+    <label>Produkt<input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Skriv fx Voksencykel" autoComplete="off" /></label>
+    <div className="productResults">
+      {productResults.map((product) => <button type="button" key={product.id} onClick={() => addProduct(product)}><strong>{product.name}</strong><small>{priceProduct(product, days)} kr</small></button>)}
+      {!products.length && <p className="hint">Indlæser produkter...</p>}
+      {products.length > 0 && productQuery.trim() && !productResults.length && <p className="hint">Ingen produkter fundet</p>}
+    </div>
+    <div className="cards selectedProducts">{lines.map((line) => { const product = productById.get(line.productId); if (!product) return null; return <article className="productLine manualLine" key={line.id}><div><strong>{product.name}</strong><small>{priceProduct(product, days)} kr</small></div><label>Nr.<input value={line.bikeId} onChange={(e) => updateLine(line.id, e.target.value)} placeholder="Cykel nr." autoComplete="off" /></label><button type="button" onClick={() => removeLine(line.id)}>Fjern</button></article>; })}</div>
     <label>Periode<input inputMode="numeric" pattern="[0-9]*" value={daysInput} onChange={(e) => setDaysInput(e.target.value.replace(/\D/g, ""))} onBlur={() => setDaysInput((value) => value || "1")} /></label>
     <div className="price">Pris i DKK <strong>{price} kr</strong></div>
     <label>Betalingsmåde<select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}><option>MP</option><option>KT</option></select></label>
