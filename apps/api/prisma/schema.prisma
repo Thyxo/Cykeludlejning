@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BikeStatus {
+  HOME
+  RENTED
+}
+
+enum PaymentMethod {
+  MP
+  KT
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  dayPrice    Int
+  weekPrice   Int?
+  twoWeekPrice Int?
+  bikes       Bike[]
+  createdAt   DateTime @default(now())
+}
+
+model Bike {
+  id              String       @id
+  productId       String
+  product         Product      @relation(fields: [productId], references: [id])
+  status          BikeStatus   @default(HOME)
+  activeRentalId  String?
+  activeRental    Rental?      @relation("ActiveBikeRental", fields: [activeRentalId], references: [id])
+  rentalItems     RentalItem[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model Rental {
+  id               String        @id @default(cuid())
+  renterName       String
+  address          String
+  phone            String
+  days             Int
+  priceDkk         Int
+  paymentMethod    PaymentMethod
+  acceptedTerms    Boolean
+  signaturePng     String
+  rentalDate       DateTime      @default(now())
+  expectedReturn   DateTime
+  returnedAt       DateTime?
+  items            RentalItem[]
+  activeBikes      Bike[]        @relation("ActiveBikeRental")
+  createdAt        DateTime      @default(now())
+}
+
+model RentalItem {
+  id          String  @id @default(cuid())
+  rentalId    String
+  rental      Rental  @relation(fields: [rentalId], references: [id])
+  bikeId      String
+  bike        Bike    @relation(fields: [bikeId], references: [id])
+  productName String
+  priceDkk    Int
+}
+
+model LockCode {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  code      String
+  updatedAt DateTime @updatedAt
+}
