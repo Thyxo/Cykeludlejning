@@ -48,14 +48,20 @@ function Signature({ value, onChange }: { value: string; onChange: (png: string)
   useEffect(() => {
     const canvas = canvasRef.current!;
     const resize = () => {
-      const png = canvas.toDataURL("image/png");
-      canvas.width = canvas.clientWidth * devicePixelRatio;
-      canvas.height = canvas.clientHeight * devicePixelRatio;
-      canvas.getContext("2d")!.scale(devicePixelRatio, devicePixelRatio);
-      if (value || png.length > 200) {
+      const ctx = canvas.getContext("2d")!;
+      const png = value || canvas.toDataURL("image/png");
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(canvas.clientWidth * ratio);
+      canvas.height = Math.round(canvas.clientHeight * ratio);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = "#111";
+      if (png.length > 200) {
         const image = new Image();
-        image.onload = () => canvas.getContext("2d")!.drawImage(image, 0, 0, canvas.clientWidth, canvas.clientHeight);
-        image.src = value || png;
+        image.onload = () => ctx.drawImage(image, 0, 0, canvas.clientWidth, canvas.clientHeight);
+        image.src = png;
       }
     };
     resize();
@@ -69,19 +75,39 @@ function Signature({ value, onChange }: { value: string; onChange: (png: string)
   };
   const move = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawing.current) return;
+    event.preventDefault();
     const ctx = event.currentTarget.getContext("2d")!;
     const p = point(event);
-    ctx.lineWidth = 3;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "#111";
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
-    onChange(event.currentTarget.toDataURL("image/png"));
   };
 
   return <div>
-    <canvas className="signature" ref={canvasRef} onPointerDown={(e) => { drawing.current = true; e.currentTarget.setPointerCapture(e.pointerId); const p = point(e); const ctx = e.currentTarget.getContext("2d")!; ctx.beginPath(); ctx.moveTo(p.x, p.y); }} onPointerMove={move} onPointerUp={() => drawing.current = false} />
-    <button className="ghost" type="button" onClick={() => { const c = canvasRef.current!; c.getContext("2d")!.clearRect(0, 0, c.width, c.height); onChange(""); }}>Ryd underskrift</button>
+    <canvas
+      className="signature"
+      ref={canvasRef}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        drawing.current = true;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const p = point(e);
+        const ctx = e.currentTarget.getContext("2d")!;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+      }}
+      onPointerMove={move}
+      onPointerUp={(e) => {
+        if (!drawing.current) return;
+        drawing.current = false;
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        onChange(e.currentTarget.toDataURL("image/png"));
+      }}
+      onPointerCancel={(e) => {
+        drawing.current = false;
+        onChange(e.currentTarget.toDataURL("image/png"));
+      }}
+    />
+    <button className="ghost" type="button" onClick={() => { const c = canvasRef.current!; const ctx = c.getContext("2d")!; ctx.clearRect(0, 0, c.clientWidth, c.clientHeight); onChange(""); }}>Ryd underskrift</button>
   </div>;
 }
 
