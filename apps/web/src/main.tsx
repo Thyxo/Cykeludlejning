@@ -212,6 +212,12 @@ function App() {
   const [locks, setLocks] = useState<LockCode[]>([]);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    if (!error) return;
+    const timeout = window.setTimeout(() => setError(""), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [error]);
+
   const load = async () => {
     const [bikesResult, productsResult, rentalsResult, locksResult] = await Promise.allSettled([
       api<Bike[]>("/bikes"),
