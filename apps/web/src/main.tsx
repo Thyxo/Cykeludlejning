@@ -216,6 +216,10 @@ function SignaturePad({ value, onChange, className = "signature" }: { value: str
 
 function Signature({ value, onChange }: { value: string; onChange: (png: string) => void }) {
   const [expanded, setExpanded] = useState(false);
+  const closeExpanded = async () => {
+    if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
+    setExpanded(false);
+  };
 
   return <div>
     <SignaturePad value={value} onChange={onChange} />
@@ -224,9 +228,9 @@ function Signature({ value, onChange }: { value: string; onChange: (png: string)
       <button className="ghost danger" type="button" onClick={() => onChange("")}>Ryd underskrift</button>
     </div>
     {expanded && <div className="modal signatureModal"><article>
-      <div className="modalHeader"><div><h2>Underskrift</h2><p>Drej gerne telefonen til landscape</p></div><button type="button" onClick={() => setExpanded(false)}>Færdig</button></div>
+      <div className="modalHeader"><div><h2>Underskrift</h2><p>Drej gerne telefonen til landscape</p></div><button type="button" onClick={closeExpanded}>Færdig</button></div>
       <SignaturePad value={value} onChange={onChange} className="signature signatureLarge" />
-      <div className="modalActions"><button type="button" onClick={() => onChange("")}>Ryd</button><button className="primary" type="button" onClick={() => setExpanded(false)}>Gem</button></div>
+      <div className="modalActions"><button type="button" onClick={() => onChange("")}>Ryd</button><button className="primary" type="button" onClick={closeExpanded}>Gem</button></div>
     </article></div>}
   </div>;
 }
@@ -371,7 +375,7 @@ function Contract({ products, onSaved, onError }: { products: Product[]; onSaved
     <div className="price">Pris i DKK <strong>{price} kr</strong></div>
     <label>Betalingsmåde<select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}><option>MP</option><option>KT</option></select></label>
     <label>Dato<input value={new Date().toLocaleDateString("da-DK")} readOnly /></label>
-    <label>Lejer (underskrift)<Signature value={form.signaturePng} onChange={(signaturePng) => setForm({ ...form, signaturePng })} /></label>
+    <div className="fieldLabel"><span>Lejer (underskrift)</span><Signature value={form.signaturePng} onChange={(signaturePng) => setForm({ ...form, signaturePng })} /></div>
     <label className="check"><input type="checkbox" checked={form.acceptedTerms} onChange={(e) => setForm({ ...form, acceptedTerms: e.target.checked })} /><span onClick={() => setShowTerms(true)}>Lejebetingelser accepteret</span></label>
     <button className="primary" onClick={() => save()}>Gem kontrakt</button>
     {quantityProduct && <QuantityDialog product={quantityProduct} value={quantityInput} onChange={setQuantityInput} onCancel={() => setQuantityProduct(null)} onConfirm={confirmQuantity} />}
