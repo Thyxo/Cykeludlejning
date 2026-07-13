@@ -8,7 +8,21 @@ if ("serviceWorker" in navigator) {
 
 type Product = { id: string; name: string; dayPrice: number; weekPrice: number | null; twoWeekPrice: number | null };
 type Bike = { id: string; status: "HOME" | "RENTED"; product: Product; activeRental?: Rental | null };
-type Rental = { id: string; renterName: string; address: string; phone: string; days: number; priceDkk: number; paymentMethod: "MP" | "KT"; rentalDate: string; expectedReturn: string; items: { bikeId: string; productName: string; priceDkk: number }[] };
+type Rental = {
+  id: string;
+  renterName: string;
+  address: string;
+  phone: string;
+  days: number;
+  priceDkk: number;
+  paymentMethod: "MP" | "KT";
+  acceptedTerms: boolean;
+  signaturePng: string;
+  rentalDate: string;
+  expectedReturn: string;
+  returnedAt?: string | null;
+  items: { bikeId: string; productName: string; priceDkk: number }[];
+};
 type LockCode = { id: string; name: string; code: string };
 type ProductLine = { id: string; productId: string; bikeId: string };
 
@@ -383,9 +397,75 @@ function InventoryOld({ bikes, onSaved }: { bikes: Bike[]; onSaved: () => void }
 
 */
 function History({ rentals }: { rentals: Rental[] }) {
+  const [query, setQuery] = useState("");
+  const [selectedRental, setSelectedRental] = useState<Rental | null>(null);
+  const filteredRentals = useMemo(() => {
+    const search = normalizeSearch(query);
+    if (!search) return rentals;
+    return rentals.filter((rental) => {
+      const text = normalizeSearch([
+        rental.renterName,
+        rental.address,
+        rental.phone,
+        rental.paymentMethod,
+        rental.priceDkk,
+        formatReturnDate(rental.rentalDate),
+        formatReturnDate(rental.expectedReturn),
+        rental.items.map((item) => `${item.productName} ${item.bikeId}`).join(" ")
+      ].join(" "));
+      return search.split(/\s+/).filter(Boolean).every((word) => text.includes(word));
+    });
+  }, [query, rentals]);
+
+  return <section><h2>Kontrakter</h2>
+    <input placeholder="Søg navn, telefon, cykel nr. eller produkt" value={query} onChange={(e) => setQuery(e.target.value)} />
+    {!filteredRentals.length && <p className="hint">Ingen kontrakter fundet</p>}
+    <div className="cards">{filteredRentals.map((rental) => <article className="card historyCard" key={rental.id}>
+      <div>
+        <h3>{rental.renterName}</h3>
+        <p>{rental.items.map((item) => item.bikeId).join(", ")} · {rental.priceDkk} kr · {rental.paymentMethod}</p>
+        <small>{formatReturnDate(rental.rentalDate)} til {formatReturnDate(rental.expectedReturn)}</small>
+      </div>
+      <button type="button" onClick={() => setSelectedRental(rental)}>Åbn kontrakt</button>
+    </article>)}</div>
+    {selectedRental && <ContractDetails rental={selectedRental} onClose={() => setSelectedRental(null)} />}
+  </section>;
+}
+
+function ContractDetails({ rental, onClose }: { rental: Rental; onClose: () => void }) {
+  return <div className="modal contractModal"><article>
+    <div className="modalHeader"><div><h2>Kontrakt</h2><p>{rental.renterName}</p></div><button type="button" onClick={onClose}>Luk</button></div>
+    <div className="contractInfo">
+      <div><span>Navn</span><strong>{rental.renterName}</strong></div>
+      <div><span>Adresse</span><strong>{rental.address}</strong></div>
+      <div><span>Telefonnummer</span><strong>{rental.phone}</strong></div>
+      <div><span>Periode</span><strong>{rental.days} dage</strong></div>
+      <div><span>Dato</span><strong>{formatReturnDate(rental.rentalDate)}</strong></div>
+      <div><span>Afleveringsdag</span><strong>{formatReturnDate(rental.expectedReturn)}</strong></div>
+      <div><span>Betaling</span><strong>{rental.paymentMethod}</strong></div>
+      <div><span>Pris i DKK</span><strong>{rental.priceDkk} kr</strong></div>
+      <div><span>Handelsbetingelser</span><strong>{rental.acceptedTerms ? "Accepteret" : "Ikke accepteret"}</strong></div>
+      {rental.returnedAt && <div><span>Returneret</span><strong>{formatReturnDate(rental.returnedAt)}</strong></div>}
+    </div>
+    <div className="contractItems">
+      <h3>Produkter</h3>
+      {rental.items.map((item) => <div className="contractItem" key={item.bikeId}>
+        <span>{item.productName}</span><strong>{item.bikeId}</strong><small>{item.priceDkk} kr</small>
+      </div>)}
+    </div>
+    <div className="signaturePreview">
+      <h3>Underskrift</h3>
+      {rental.signaturePng ? <img src={rental.signaturePng} alt={`Underskrift fra ${rental.renterName}`} /> : <p className="hint">Ingen underskrift gemt</p>}
+    </div>
+  </article></div>;
+}
+
+/*
+function HistoryOld({ rentals }: { rentals: Rental[] }) {
   return <section><h2>Kontrakter</h2><div className="cards">{rentals.map((rental) => <article className="card" key={rental.id}><h3>{rental.renterName}</h3><p>{rental.items.map((i) => i.bikeId).join(", ")} · {rental.priceDkk} kr · {rental.paymentMethod}</p><small>{new Date(rental.rentalDate).toLocaleDateString("da-DK")} til {new Date(rental.expectedReturn).toLocaleDateString("da-DK")}</small></article>)}</div></section>;
 }
 
+*/
 function Locks({ locks, onSaved }: { locks: LockCode[]; onSaved: () => void }) {
   const [draft, setDraft] = useState<Record<string, LockCode>>({});
   return <section><h2>Kodelåse</h2><div className="cards">{locks.map((lock) => { const item = draft[lock.id] || lock; return <article className="card lock" key={lock.id}><input value={item.name} onChange={(e) => setDraft({ ...draft, [lock.id]: { ...item, name: e.target.value } })} /><input value={item.code} onChange={(e) => setDraft({ ...draft, [lock.id]: { ...item, code: e.target.value } })} /><button onClick={async () => { await api(`/locks/${lock.id}`, { method: "PUT", body: JSON.stringify(item) }); onSaved(); }}>Gem</button></article>; })}</div></section>;
