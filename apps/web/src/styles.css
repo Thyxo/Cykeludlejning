@@ -9,6 +9,7 @@ html, body, #root { width: 100%; min-height: 100%; overflow: hidden; }
 body { margin: 0; overscroll-behavior: none; -webkit-text-size-adjust: 100%; touch-action: manipulation; }
 button, input, select { font: inherit; }
 button { border: 0; border-radius: 8px; padding: 12px 14px; background: #dde7dc; color: #17201a; font-weight: 700; }
+button:disabled { opacity: .55; }
 input, select { width: 100%; border: 1px solid #cbd6cb; border-radius: 8px; padding: 12px; background: #fff; min-height: 46px; }
 label { display: grid; gap: 6px; font-weight: 700; }
 h1, h2, h3, p { margin-top: 0; }
@@ -48,6 +49,7 @@ section, aside { display: grid; gap: 12px; background: #fff; border: 1px solid #
 .manualLine label { gap: 4px; }
 .manualLine input { min-height: 40px; padding: 8px 10px; }
 .manualLine > button { background: #f4e8e8; color: #6f2424; }
+.periodRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, .6fr); gap: 10px; }
 .lineControls { display: grid; grid-template-columns: repeat(3, 40px); gap: 6px; align-items: center; }
 .lineControls button { min-width: 40px; min-height: 40px; padding: 0; }
 .lineControls span { text-align: center; font-weight: 800; }
@@ -55,7 +57,10 @@ section, aside { display: grid; gap: 12px; background: #fff; border: 1px solid #
 .check input { width: 24px; min-height: 24px; }
 .signature { width: 100%; height: 180px; background: #fff; border: 2px solid #222; border-radius: 8px; touch-action: none; }
 .bikeList, .cards { display: grid; gap: 10px; }
-.bike { grid-template-columns: auto 80px 1fr auto; align-items: center; padding: 12px; border: 1px solid #d9e1d9; border-radius: 8px; background: #f9fbf8; }
+.rentalGroups { display: grid; gap: 12px; }
+.rentalGroup { display: grid; gap: 10px; padding: 14px; border: 1px solid #dde5dd; border-radius: 8px; background: #fbfcfa; }
+.rentalGroup h3 { margin-bottom: 0; }
+.bike { grid-template-columns: auto minmax(120px, 1fr) minmax(72px, auto) auto; align-items: center; padding: 12px; border: 1px solid #d9e1d9; border-radius: 8px; background: #f9fbf8; }
 .bike input { width: 24px; min-height: 24px; }
 .bike.rented { background: #fff1e8; border-color: #f2c1a2; }
 .bike small { color: #6a584f; }
@@ -64,6 +69,8 @@ section, aside { display: grid; gap: 12px; background: #fff; border: 1px solid #
 .lock { grid-template-columns: 1fr 110px auto; align-items: center; }
 .modal { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: #0008; z-index: 10; }
 .modal article { max-width: 760px; max-height: 86dvh; overflow: auto; background: white; border-radius: 8px; padding: 20px; }
+.quantityModal article { width: min(420px, 100%); display: grid; gap: 12px; }
+.modalActions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 800px) {
   h1 { font-size: 1.5rem; }
   h2 { font-size: 1.1rem; }
@@ -77,10 +84,11 @@ section, aside { display: grid; gap: 12px; background: #fff; border: 1px solid #
   nav { gap: 4px; }
   nav button { padding: 9px 4px; font-size: 0.82rem; min-height: 42px; }
   section, aside { padding: 12px; }
-  .bike { grid-template-columns: auto 72px 1fr; }
-  .bike small { grid-column: 3; }
+  .bike { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .bike small { grid-column: 2 / -1; }
   .lock { grid-template-columns: 1fr; }
   .manualLine { grid-template-columns: 1fr; }
+  .periodRow { grid-template-columns: 1fr; }
   .signature { height: 150px; }
   .price { padding: 12px; }
   .price strong { font-size: 1.7rem; }

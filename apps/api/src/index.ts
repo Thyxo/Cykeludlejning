@@ -75,12 +75,15 @@ app.get("/products", requireAuth, asyncRoute(async (_req, res) => {
 app.get("/bikes", requireAuth, asyncRoute(async (req, res) => {
   const q = String(req.query.q || "").trim();
   res.json(await prisma.bike.findMany({
-    where: q ? {
-      OR: [
-        { id: { contains: q, mode: "insensitive" } },
-        { activeRental: { renterName: { contains: q, mode: "insensitive" } } }
-      ]
-    } : undefined,
+    where: {
+      status: "RENTED",
+      ...(q ? {
+        OR: [
+          { id: { contains: q, mode: "insensitive" } },
+          { activeRental: { renterName: { contains: q, mode: "insensitive" } } }
+        ]
+      } : {})
+    },
     include: { product: true, activeRental: true },
     orderBy: { id: "asc" }
   }));
@@ -89,7 +92,7 @@ app.get("/bikes", requireAuth, asyncRoute(async (req, res) => {
 app.post("/bikes/return", requireAuth, asyncRoute(async (req, res) => {
   const { bikeIds } = z.object({ bikeIds: z.array(z.string()).min(1) }).parse(req.body);
   await prisma.$transaction([
-    prisma.bike.updateMany({ where: { id: { in: bikeIds } }, data: { status: "HOME", activeRentalId: null } }),
+    prisma.bike.deleteMany({ where: { id: { in: bikeIds } } }),
     prisma.rental.updateMany({
       where: { activeBikes: { none: {} }, returnedAt: null },
       data: { returnedAt: new Date() }
@@ -115,51 +118,69 @@ app.post("/rentals", requireAuth, asyncRoute(async (req, res) => {
     days: z.number().int().min(1),
     paymentMethod: z.enum(["MP", "KT"]),
     acceptedTerms: z.boolean(),
-    signaturePng: z.string()
+    signaturePng: z.string(),
+    forceReRent: z.boolean().optional()
   }).parse(req.body);
   if (!data.acceptedTerms) return res.status(400).json({ error: "Lejebetingelser skal accepteres" });
   if (!data.bikeSelections?.length && !data.bikeIds?.length) return res.status(400).json({ error: "Vælg mindst ét produkt" });
   const requestedBikeIds = data.bikeSelections?.map((selection) => selection.bikeId.trim()) || data.bikeIds || [];
   if (new Set(requestedBikeIds).size !== requestedBikeIds.length) return res.status(400).json({ error: "Samme nr. er valgt flere gange" });
 
-  const bikes = data.bikeSelections?.length
-    ? await Promise.all(data.bikeSelections.map(async (selection) => {
-      const product = await prisma.product.findUnique({ where: { id: selection.productId } });
-      if (!product) throw new Error("Produktet findes ikke");
-      const bikeId = selection.bikeId.trim();
-      const existing = await prisma.bike.findUnique({ where: { id: bikeId }, include: { product: true } });
-      if (existing && existing.status !== "HOME") throw new Error(`${bikeId} er allerede udlejet`);
-      if (existing && existing.productId !== selection.productId) throw new Error(`${bikeId} findes allerede som ${existing.product.name}`);
-      return existing || await prisma.bike.create({ data: { id: bikeId, productId: selection.productId }, include: { product: true } });
-    }))
-    : await prisma.bike.findMany({ where: { id: { in: requestedBikeIds }, status: "HOME" }, include: { product: true } });
-  const expectedCount = requestedBikeIds.length;
-  if (bikes.length !== expectedCount) return res.status(409).json({ error: "En eller flere cykler er allerede udlejet" });
+  const selections = data.bikeSelections?.map((selection) => ({ productId: selection.productId, bikeId: selection.bikeId.trim() })) || [];
+  const products = await prisma.product.findMany({ where: { id: { in: selections.map((selection) => selection.productId) } } }) as PriceProduct[];
+  const productById = new Map<string, PriceProduct>(products.map((product: PriceProduct) => [product.id, product]));
+  if (selections.some((selection) => !productById.has(selection.productId))) throw new Error("Produktet findes ikke");
 
-  const items = bikes.map((bike: { id: string; product: PriceProduct }) => {
-    const price = calculateProductPrice(bike.product, data.days).total;
-    return { bikeId: bike.id, productName: bike.product.name, priceDkk: price };
+  const existingBikes = await prisma.bike.findMany({ where: { id: { in: requestedBikeIds }, status: "RENTED" } }) as { id: string }[];
+  if (existingBikes.length && !data.forceReRent) {
+    return res.status(409).json({
+      code: "BIKE_ALREADY_RENTED",
+      bikeIds: existingBikes.map((bike: { id: string }) => bike.id),
+      error: "En eller flere cykler er allerede udlejet"
+    });
+  }
+
+  const items = selections.map((selection) => {
+    const product = productById.get(selection.productId)!;
+    const price = calculateProductPrice(product, data.days).total;
+    return { bikeId: selection.bikeId, productName: product.name, priceDkk: price };
   });
   const priceDkk = items.reduce((sum: number, item: { priceDkk: number }) => sum + item.priceDkk, 0);
   const expectedReturn = new Date();
-  expectedReturn.setDate(expectedReturn.getDate() + data.days);
+  expectedReturn.setDate(expectedReturn.getDate() + data.days - 1);
 
-  const rental = await prisma.rental.create({
-    data: {
-      renterName: data.renterName,
-      address: data.address,
-      phone: data.phone,
-      days: data.days,
-      priceDkk,
-      paymentMethod: data.paymentMethod,
-      acceptedTerms: data.acceptedTerms,
-      signaturePng: data.signaturePng,
-      expectedReturn,
-      items: { create: items }
-    },
-    include: { items: true }
+  const rental = await prisma.$transaction(async (tx: PrismaClient) => {
+    if (existingBikes.length) {
+      await tx.bike.updateMany({ where: { id: { in: existingBikes.map((bike: { id: string }) => bike.id) } }, data: { status: "HOME", activeRentalId: null } });
+    }
+    const createdRental = await tx.rental.create({
+      data: {
+        renterName: data.renterName,
+        address: data.address,
+        phone: data.phone,
+        days: data.days,
+        priceDkk,
+        paymentMethod: data.paymentMethod,
+        acceptedTerms: data.acceptedTerms,
+        signaturePng: data.signaturePng,
+        expectedReturn,
+        items: { create: items }
+      },
+      include: { items: true }
+    });
+    await Promise.all(selections.map((selection) => tx.bike.upsert({
+      where: { id: selection.bikeId },
+      create: { id: selection.bikeId, productId: selection.productId, status: "RENTED", activeRentalId: createdRental.id },
+      update: { productId: selection.productId, status: "RENTED", activeRentalId: createdRental.id }
+    })));
+    if (existingBikes.length) {
+      await tx.rental.updateMany({
+        where: { activeBikes: { none: {} }, returnedAt: null },
+        data: { returnedAt: new Date() }
+      });
+    }
+    return createdRental;
   });
-  await prisma.bike.updateMany({ where: { id: { in: requestedBikeIds } }, data: { status: "RENTED", activeRentalId: rental.id } });
   res.status(201).json(rental);
 }));
 

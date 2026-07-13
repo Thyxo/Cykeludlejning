@@ -13,6 +13,20 @@ type LockCode = { id: string; name: string; code: string };
 type ProductLine = { id: string; productId: string; bikeId: string };
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
+
+class ApiError extends Error {
+  status: number;
+  code?: string;
+  bikeIds?: string[];
+
+  constructor(status: number, body: { error?: string; code?: string; bikeIds?: string[] }) {
+    super(body.error || "Der skete en fejl");
+    this.status = status;
+    this.code = body.code;
+    this.bikeIds = body.bikeIds;
+  }
+}
+
 const productSearchAliases: Record<string, string[]> = {
   voksen: ["voksencykel", "damecykel", "herrecykel"],
   voksencykel: ["voksen"],
@@ -43,8 +57,9 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getSessionToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(`${API}${path}`, { ...options, credentials: "include", headers });
-  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Der skete en fejl");
-  return response.json();
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new ApiError(response.status, body);
+  return body;
 }
 
 function priceProduct(product: Product, days: number) {
@@ -62,6 +77,17 @@ function priceProduct(product: Product, days: number) {
   }
   total += rest * product.dayPrice;
   return total;
+}
+
+function expectedReturnDate(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days - 1);
+  return date;
+}
+
+function formatReturnDate(value: string | Date) {
+  const date = value instanceof Date ? value : new Date(value);
+  return `${date.getDate()}/${date.getMonth() + 1}-${String(date.getFullYear()).slice(-2)}`;
 }
 
 function normalizeSearch(value: string) {
@@ -221,20 +247,35 @@ function Contract({ products, onSaved, onError }: { products: Product[]; onSaved
   const [daysInput, setDaysInput] = useState("1");
   const [form, setForm] = useState({ renterName: "", address: "", phone: "", paymentMethod: "MP", acceptedTerms: false, signaturePng: "" });
   const [showTerms, setShowTerms] = useState(false);
+  const [quantityProduct, setQuantityProduct] = useState<Product | null>(null);
+  const [quantityInput, setQuantityInput] = useState("1");
   const days = Math.max(1, Number.parseInt(daysInput || "1", 10) || 1);
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const productResults = useMemo(() => {
     const query = productQuery.trim();
-    if (!query) return products.slice(0, 8);
+    if (!query) return [];
     return products.filter((product) => productMatchesQuery(product, query)).slice(0, 8);
   }, [productQuery, products]);
   const price = lines.reduce((sum, line) => {
     const product = productById.get(line.productId);
     return product ? sum + priceProduct(product, days) : sum;
   }, 0);
-  const addProduct = (product: Product) => {
-    setLines((current) => [...current, { id: crypto.randomUUID(), productId: product.id, bikeId: "" }]);
+  const addProduct = (product: Product, quantity = 1) => {
+    const count = Math.max(1, Math.min(99, Math.floor(quantity)));
+    setLines((current) => [
+      ...current,
+      ...Array.from({ length: count }, () => ({ id: crypto.randomUUID(), productId: product.id, bikeId: "" }))
+    ]);
     setProductQuery("");
+  };
+  const openQuantityDialog = (product: Product) => {
+    setQuantityProduct(product);
+    setQuantityInput("1");
+  };
+  const confirmQuantity = () => {
+    if (!quantityProduct) return;
+    addProduct(quantityProduct, Number.parseInt(quantityInput || "1", 10) || 1);
+    setQuantityProduct(null);
   };
   const updateLine = (id: string, bikeId: string) => {
     setLines((current) => current.map((line) => line.id === id ? { ...line, bikeId } : line));
@@ -242,7 +283,7 @@ function Contract({ products, onSaved, onError }: { products: Product[]; onSaved
   const removeLine = (id: string) => {
     setLines((current) => current.filter((line) => line.id !== id));
   };
-  const save = async () => {
+  const save = async (forceReRent = false) => {
     try {
       if (!lines.length) throw new Error("Vælg mindst ét produkt");
       if (lines.some((line) => !line.bikeId.trim())) throw new Error("Skriv nr. på alle valgte produkter");
@@ -252,11 +293,20 @@ function Contract({ products, onSaved, onError }: { products: Product[]; onSaved
           ...form,
           days,
           bikeSelections: lines.map((line) => ({ productId: line.productId, bikeId: line.bikeId.trim() })),
-          paymentMethod: form.paymentMethod
+          paymentMethod: form.paymentMethod,
+          forceReRent
         })
       });
       setLines([]); setProductQuery(""); setDaysInput("1"); setForm({ renterName: "", address: "", phone: "", paymentMethod: "MP", acceptedTerms: false, signaturePng: "" }); onSaved();
-    } catch (err) { onError((err as Error).message); }
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "BIKE_ALREADY_RENTED") {
+        const bikeText = err.bikeIds?.join(", ") || "en eller flere cykler";
+        const confirmed = window.confirm(`${bikeText} er allerede ude. Er du sikker på du vil leje cyklen igen, eller vil du markere den som modtaget først?\n\nTryk OK for at markere den modtaget og sætte den på den nye kontrakt.`);
+        if (confirmed) await save(true);
+        return;
+      }
+      onError((err as Error).message);
+    }
   };
   return <section><h2>Lynkontrakt</h2>
     <label>Navn<input value={form.renterName} onChange={(e) => setForm({ ...form, renterName: e.target.value })} /></label>
@@ -264,29 +314,74 @@ function Contract({ products, onSaved, onError }: { products: Product[]; onSaved
     <label>Telefonnummer<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
     <label>Produkt<input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Skriv fx Voksencykel" autoComplete="off" /></label>
     <div className="productResults">
-      {productResults.map((product) => <button type="button" key={product.id} onClick={() => addProduct(product)}><strong>{product.name}</strong><small>{priceProduct(product, days)} kr</small></button>)}
+      {productResults.map((product) => <button type="button" key={product.id} onClick={() => openQuantityDialog(product)}><strong>{product.name}</strong><small>{priceProduct(product, days)} kr</small></button>)}
       {!products.length && <p className="hint">Indlæser produkter...</p>}
       {products.length > 0 && productQuery.trim() && !productResults.length && <p className="hint">Ingen produkter fundet</p>}
     </div>
     <div className="cards selectedProducts">{lines.map((line) => { const product = productById.get(line.productId); if (!product) return null; return <article className="productLine manualLine" key={line.id}><div><strong>{product.name}</strong><small>{priceProduct(product, days)} kr</small></div><label>Nr.<input value={line.bikeId} onChange={(e) => updateLine(line.id, e.target.value)} placeholder="Cykel nr." autoComplete="off" /></label><button type="button" onClick={() => removeLine(line.id)}>Fjern</button></article>; })}</div>
-    <label>Periode<input inputMode="numeric" pattern="[0-9]*" value={daysInput} onChange={(e) => setDaysInput(e.target.value.replace(/\D/g, ""))} onBlur={() => setDaysInput((value) => value || "1")} /></label>
+    <div className="periodRow"><label>Periode<input inputMode="numeric" pattern="[0-9]*" value={daysInput} onChange={(e) => setDaysInput(e.target.value.replace(/\D/g, ""))} onBlur={() => setDaysInput((value) => value || "1")} /></label><label>Afleveringsdag<input value={formatReturnDate(expectedReturnDate(days))} readOnly /></label></div>
     <div className="price">Pris i DKK <strong>{price} kr</strong></div>
     <label>Betalingsmåde<select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}><option>MP</option><option>KT</option></select></label>
     <label>Dato<input value={new Date().toLocaleDateString("da-DK")} readOnly /></label>
     <label>Lejer (underskrift)<Signature value={form.signaturePng} onChange={(signaturePng) => setForm({ ...form, signaturePng })} /></label>
     <label className="check"><input type="checkbox" checked={form.acceptedTerms} onChange={(e) => setForm({ ...form, acceptedTerms: e.target.checked })} /><span onClick={() => setShowTerms(true)}>Lejebetingelser accepteret</span></label>
-    <button className="primary" onClick={save}>Gem kontrakt</button>
+    <button className="primary" onClick={() => save()}>Gem kontrakt</button>
+    {quantityProduct && <QuantityDialog product={quantityProduct} value={quantityInput} onChange={setQuantityInput} onCancel={() => setQuantityProduct(null)} onConfirm={confirmQuantity} />}
     {showTerms && <Terms onClose={() => setShowTerms(false)} />}
   </section>;
 }
 
+function QuantityDialog({ product, value, onChange, onCancel, onConfirm }: { product: Product; value: string; onChange: (value: string) => void; onCancel: () => void; onConfirm: () => void }) {
+  return <div className="modal quantityModal"><article>
+    <h2>Hvor mange?</h2>
+    <p>{product.name}</p>
+    <input autoFocus inputMode="numeric" pattern="[0-9]*" value={value} onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))} onKeyDown={(e) => { if (e.key === "Enter") onConfirm(); }} />
+    <div className="modalActions"><button type="button" onClick={onCancel}>Annuller</button><button className="primary" type="button" onClick={onConfirm}>Tilføj</button></div>
+  </article></div>;
+}
+
 function Inventory({ bikes, onSaved }: { bikes: Bike[]; onSaved: () => void }) {
+  const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const filtered = bikes.filter((bike) => `${bike.id} ${bike.product.name} ${bike.activeRental?.renterName || ""}`.toLowerCase().includes(q.toLowerCase()));
+  const groups = Array.from(filtered.reduce((map, bike) => {
+    const key = bike.activeRental?.id || bike.id;
+    const group = map.get(key) || { rental: bike.activeRental, bikes: [] as Bike[] };
+    group.bikes.push(bike);
+    map.set(key, group);
+    return map;
+  }, new Map<string, { rental?: Rental | null; bikes: Bike[] }>()).values());
+  const returnSelected = async () => {
+    if (!selected.length) return;
+    await api("/bikes/return", { method: "POST", body: JSON.stringify({ bikeIds: selected }) });
+    setSelected([]);
+    onSaved();
+  };
+  return <section><h2>Lager</h2>
+    <input placeholder="Søg cykel eller lejer" value={q} onChange={(e) => setQ(e.target.value)} />
+    {!groups.length && <p className="hint">Ingen cykler ude</p>}
+    <div className="rentalGroups">{groups.map((group) => <article className="rentalGroup" key={group.rental?.id || group.bikes[0]?.id}>
+      <h3>{group.rental?.renterName || "Uden kontrakt"}</h3>
+      <div className="bikeList">{group.bikes.map((bike) => <label className="bike rented" key={bike.id}>
+        <input type="checkbox" checked={selected.includes(bike.id)} onChange={(e) => setSelected(e.target.checked ? [...selected, bike.id] : selected.filter((id) => id !== bike.id))} />
+        <b>{bike.product.name}</b>
+        <span>{bike.id}</span>
+        <small>retur {formatReturnDate(bike.activeRental?.expectedReturn || new Date())}</small>
+      </label>)}</div>
+    </article>)}</div>
+    <button className="primary" disabled={!selected.length} onClick={returnSelected}>Marker valgte modtaget</button>
+  </section>;
+}
+
+/*
+function InventoryOld({ bikes, onSaved }: { bikes: Bike[]; onSaved: () => void }) {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const filtered = bikes.filter((bike) => `${bike.id} ${bike.activeRental?.renterName || ""}`.toLowerCase().includes(q.toLowerCase()));
   return <section><h2>Lager</h2><input placeholder="Søg cykel eller lejer" value={q} onChange={(e) => setQ(e.target.value)} /><div className="bikeList">{filtered.map((bike) => <label className={`bike ${bike.status.toLowerCase()}`} key={bike.id}><input type="checkbox" checked={selected.includes(bike.id)} onChange={(e) => setSelected(e.target.checked ? [...selected, bike.id] : selected.filter((id) => id !== bike.id))} /><b>{bike.id}</b><span>{bike.status === "HOME" ? "Hjemme" : `Udlejet til ${bike.activeRental?.renterName}`}</span><small>{bike.status === "RENTED" && `Retur ${new Date(bike.activeRental!.expectedReturn).toLocaleDateString("da-DK")}`}</small></label>)}</div><button className="primary" onClick={async () => { await api("/bikes/return", { method: "POST", body: JSON.stringify({ bikeIds: selected }) }); setSelected([]); onSaved(); }}>Marker valgte retur</button></section>;
 }
 
+*/
 function History({ rentals }: { rentals: Rental[] }) {
   return <section><h2>Kontrakter</h2><div className="cards">{rentals.map((rental) => <article className="card" key={rental.id}><h3>{rental.renterName}</h3><p>{rental.items.map((i) => i.bikeId).join(", ")} · {rental.priceDkk} kr · {rental.paymentMethod}</p><small>{new Date(rental.rentalDate).toLocaleDateString("da-DK")} til {new Date(rental.expectedReturn).toLocaleDateString("da-DK")}</small></article>)}</div></section>;
 }

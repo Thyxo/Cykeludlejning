@@ -45,23 +45,17 @@ const locks = [
 ] as const;
 
 async function main() {
-  for (const [name, dayPrice, weekPrice, twoWeekPrice, prefix, stock] of products) {
+  await prisma.bike.deleteMany({ where: { status: "HOME" } });
+
+  for (const [name, dayPrice, weekPrice, twoWeekPrice] of products) {
     const existingProduct = await prisma.product.findUnique({ where: { name } });
     const aliasProduct = existingProduct ? null : await prisma.product.findFirst({ where: { name: { in: productAliases.get(name) || [] } } });
-    const product = existingProduct
-      ? await prisma.product.update({ where: { id: existingProduct.id }, data: { dayPrice, weekPrice, twoWeekPrice } })
-      : aliasProduct
-        ? await prisma.product.update({ where: { id: aliasProduct.id }, data: { name, dayPrice, weekPrice, twoWeekPrice } })
-        : await prisma.product.create({ data: { name, dayPrice, weekPrice, twoWeekPrice } });
-
-    if (!prefix || !stock) continue;
-    for (let n = 1; n <= stock; n += 1) {
-      const id = `${prefix}${String(n).padStart(2, "0")}`;
-      await prisma.bike.upsert({
-        where: { id },
-        create: { id, productId: product.id },
-        update: {}
-      });
+    if (existingProduct) {
+      await prisma.product.update({ where: { id: existingProduct.id }, data: { dayPrice, weekPrice, twoWeekPrice } });
+    } else if (aliasProduct) {
+      await prisma.product.update({ where: { id: aliasProduct.id }, data: { name, dayPrice, weekPrice, twoWeekPrice } });
+    } else {
+      await prisma.product.create({ data: { name, dayPrice, weekPrice, twoWeekPrice } });
     }
   }
 

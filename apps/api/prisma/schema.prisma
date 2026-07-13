@@ -34,7 +34,6 @@ model Bike {
   status          BikeStatus   @default(HOME)
   activeRentalId  String?
   activeRental    Rental?      @relation("ActiveBikeRental", fields: [activeRentalId], references: [id])
-  rentalItems     RentalItem[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 }
@@ -62,7 +61,6 @@ model RentalItem {
   rentalId    String
   rental      Rental  @relation(fields: [rentalId], references: [id])
   bikeId      String
-  bike        Bike    @relation(fields: [bikeId], references: [id])
   productName String
   priceDkk    Int
 }
