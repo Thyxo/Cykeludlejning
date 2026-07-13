@@ -1,5 +1,5 @@
-const CACHE = "cykeludlejning-v3";
-const ASSETS = ["/", "/manifest.webmanifest", "/icon.svg"];
+const CACHE = "cykeludlejning-v4";
+const ASSETS = ["/", "/manifest.webmanifest", "/app-icon.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));

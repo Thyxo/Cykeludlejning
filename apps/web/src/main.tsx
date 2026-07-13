@@ -28,6 +28,12 @@ type ProductLine = { id: string; productId: string; bikeId: string };
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
 const BRAND_LOGO = "/samsoe-logo.png";
+const navLabels: Record<string, string> = {
+  kontrakt: "kontrakt",
+  lager: "lager",
+  historik: "historik",
+  laase: "koder"
+};
 
 class ApiError extends Error {
   status: number;
@@ -288,7 +294,7 @@ function App() {
       {tab === "laase" && <Locks locks={locks} onSaved={load} />}
     </section>
     <nav>
-      {["kontrakt", "lager", "historik", "laase"].map((item) => <button className={tab === item ? "active" : ""} onClick={() => setTab(item)} key={item}>{item}</button>)}
+      {["kontrakt", "lager", "historik", "laase"].map((item) => <button className={tab === item ? "active" : ""} onClick={() => setTab(item)} key={item}>{navLabels[item]}</button>)}
     </nav>
   </main>;
 }
