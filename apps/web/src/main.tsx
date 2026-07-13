@@ -136,6 +136,14 @@ function SignaturePad({ value, onChange, className = "signature" }: { value: str
   const moved = useRef(false);
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
 
+  const drawContainedImage = (ctx: CanvasRenderingContext2D, image: HTMLImageElement, width: number, height: number) => {
+    const imageRatio = image.naturalWidth / image.naturalHeight;
+    const canvasRatio = width / height;
+    const drawWidth = imageRatio > canvasRatio ? width : height * imageRatio;
+    const drawHeight = imageRatio > canvasRatio ? width / imageRatio : height;
+    ctx.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current!;
     let cancelled = false;
@@ -153,7 +161,7 @@ function SignaturePad({ value, onChange, className = "signature" }: { value: str
       if (png.length > 200) {
         const image = new Image();
         image.onload = () => {
-          if (!cancelled) ctx.drawImage(image, 0, 0, canvas.clientWidth, canvas.clientHeight);
+          if (!cancelled) drawContainedImage(ctx, image, canvas.clientWidth, canvas.clientHeight);
         };
         image.src = png;
       }
