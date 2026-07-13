@@ -130,15 +130,18 @@ function productMatchesQuery(product: Product, query: string) {
   return words.length > 0 && words.every((word) => searchText.includes(word));
 }
 
-function Signature({ value, onChange }: { value: string; onChange: (png: string) => void }) {
+function SignaturePad({ value, onChange, className = "signature" }: { value: string; onChange: (png: string) => void; className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
+  const moved = useRef(false);
+  const lastPoint = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
+    let cancelled = false;
     const resize = () => {
       const ctx = canvas.getContext("2d")!;
-      const png = value || canvas.toDataURL("image/png");
+      const png = value;
       const ratio = window.devicePixelRatio || 1;
       canvas.width = Math.round(canvas.clientWidth * ratio);
       canvas.height = Math.round(canvas.clientHeight * ratio);
@@ -149,13 +152,18 @@ function Signature({ value, onChange }: { value: string; onChange: (png: string)
       ctx.strokeStyle = "#111";
       if (png.length > 200) {
         const image = new Image();
-        image.onload = () => ctx.drawImage(image, 0, 0, canvas.clientWidth, canvas.clientHeight);
+        image.onload = () => {
+          if (!cancelled) ctx.drawImage(image, 0, 0, canvas.clientWidth, canvas.clientHeight);
+        };
         image.src = png;
       }
     };
     resize();
     addEventListener("resize", resize);
-    return () => removeEventListener("resize", resize);
+    return () => {
+      cancelled = true;
+      removeEventListener("resize", resize);
+    };
   }, [value]);
 
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -167,6 +175,10 @@ function Signature({ value, onChange }: { value: string; onChange: (png: string)
     event.preventDefault();
     const ctx = event.currentTarget.getContext("2d")!;
     const p = point(event);
+    const previous = lastPoint.current;
+    if (previous && Math.hypot(p.x - previous.x, p.y - previous.y) < 2) return;
+    moved.current = true;
+    lastPoint.current = p;
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
   };
@@ -178,18 +190,19 @@ function Signature({ value, onChange }: { value: string; onChange: (png: string)
     } catch {
       // Some mobile browsers release pointer capture before React receives the final event.
     }
-    onChange(event.currentTarget.toDataURL("image/png"));
+    if (moved.current) onChange(event.currentTarget.toDataURL("image/png"));
   };
 
-  return <div>
-    <canvas
-      className="signature"
+  return <canvas
+      className={className}
       ref={canvasRef}
       onPointerDown={(e) => {
         e.preventDefault();
         drawing.current = true;
+        moved.current = false;
         e.currentTarget.setPointerCapture(e.pointerId);
         const p = point(e);
+        lastPoint.current = p;
         const ctx = e.currentTarget.getContext("2d")!;
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
@@ -198,8 +211,23 @@ function Signature({ value, onChange }: { value: string; onChange: (png: string)
       onPointerUp={finish}
       onPointerCancel={finish}
       onLostPointerCapture={finish}
-    />
-    <button className="ghost" type="button" onClick={() => { const c = canvasRef.current!; const ctx = c.getContext("2d")!; ctx.clearRect(0, 0, c.clientWidth, c.clientHeight); onChange(""); }}>Ryd underskrift</button>
+    />;
+}
+
+function Signature({ value, onChange }: { value: string; onChange: (png: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return <div>
+    <SignaturePad value={value} onChange={onChange} />
+    <div className="signatureActions">
+      <button className="ghost" type="button" onClick={() => setExpanded(true)}>Skriv stort</button>
+      <button className="ghost danger" type="button" onClick={() => onChange("")}>Ryd underskrift</button>
+    </div>
+    {expanded && <div className="modal signatureModal"><article>
+      <div className="modalHeader"><div><h2>Underskrift</h2><p>Drej gerne telefonen til landscape</p></div><button type="button" onClick={() => setExpanded(false)}>Færdig</button></div>
+      <SignaturePad value={value} onChange={onChange} className="signature signatureLarge" />
+      <div className="modalActions"><button type="button" onClick={() => onChange("")}>Ryd</button><button className="primary" type="button" onClick={() => setExpanded(false)}>Gem</button></div>
+    </article></div>}
   </div>;
 }
 
