@@ -2,7 +2,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
 import jwt from "jsonwebtoken";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { calculateProductPrice, type PriceProduct } from "./pricing.js";
 
@@ -149,7 +149,7 @@ app.post("/rentals", requireAuth, asyncRoute(async (req, res) => {
   const expectedReturn = new Date();
   expectedReturn.setDate(expectedReturn.getDate() + data.days - 1);
 
-  const rental = await prisma.$transaction(async (tx: PrismaClient) => {
+  const rental = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     if (existingBikes.length) {
       await tx.bike.updateMany({ where: { id: { in: existingBikes.map((bike: { id: string }) => bike.id) } }, data: { status: "HOME", activeRentalId: null } });
     }
