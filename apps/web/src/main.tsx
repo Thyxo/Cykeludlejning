@@ -28,7 +28,6 @@ type ProductLine = { id: string; productId: string; bikeId: string };
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
 const BRAND_LOGO = "/samsoe-logo.png";
-const BRAND_CARD = "/samsoe-brand-card.png";
 
 class ApiError extends Error {
   status: number;
@@ -280,10 +279,9 @@ function App() {
   if (!authed) return <Login onLogin={() => { setAuthed(true); load(); }} />;
 
   return <main className="app">
-    <header><div><strong>Samsø Cykeludlejning</strong><span>{new Date().toLocaleDateString("da-DK")}</span></div><button onClick={() => load()}>Opdater</button></header>
+    <header><div className="brandLockup"><img src={BRAND_LOGO} alt="Samsø Cykeludlejning" /><div><strong>Samsø Cykeludlejning</strong><span>Svenskgyden 4, Mårup · 30 86 85 23</span></div></div><button onClick={() => load()}>Opdater</button></header>
     {error && <p className="toast">{error}</p>}
     <section className="screen">
-      <div className="brandBanner"><img src={BRAND_LOGO} alt="Samsø Cykeludlejning" /><div><strong>Samsø Cykeludlejning</strong><span>Svenskgyden 4, Mårup · 30 86 85 23</span></div></div>
       {tab === "kontrakt" && <Contract products={products} onSaved={load} onError={setError} />}
       {tab === "lager" && <Inventory bikes={bikes} onSaved={load} />}
       {tab === "historik" && <History rentals={rentals} />}
@@ -300,7 +298,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   return <main className="login"><form onSubmit={async (e) => { e.preventDefault(); try { const result = await api<{ token: string }>("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }); setSessionToken(result.token); onLogin(); } catch (err) { setError((err as Error).message); } }}>
-    <div className="loginBrand"><img className="loginLogo" src={BRAND_LOGO} alt="Samsø Cykeludlejning" /><img className="brandCardImage" src={BRAND_CARD} alt="Samsø Cykeludlejning adresse" /></div>
+    <div className="loginBrand"><img className="loginLogo" src={BRAND_LOGO} alt="Samsø Cykeludlejning" /></div>
     <h1>Cykeludlejning</h1><input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Brugernavn" /><input value={password} type="password" onChange={(e) => setPassword(e.target.value)} placeholder="Kodeord" /><button>Log ind</button>{error && <p className="toast">{error}</p>}
   </form></main>;
 }

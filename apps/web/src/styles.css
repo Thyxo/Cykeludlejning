@@ -16,19 +16,21 @@ h1, h2, h3, p { margin-top: 0; }
 h1 { font-size: 1.75rem; }
 h2 { font-size: 1.25rem; }
 .app { position: fixed; inset: 0; height: 100dvh; display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
-header { display: flex; justify-content: space-between; align-items: center; padding: 14px max(16px, env(safe-area-inset-left)); background: linear-gradient(135deg, #0b3f28, #126640); color: white; box-shadow: 0 10px 24px #0b3f2824; z-index: 2; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px max(16px, env(safe-area-inset-left)); background: #0b4a2f; color: white; z-index: 2; }
 header div { display: grid; gap: 2px; }
 header span { color: #d9efe0; font-size: 13px; }
+.brandLockup { grid-template-columns: auto minmax(0, 1fr); align-items: center; min-width: 0; }
+.brandLockup img { width: 46px; height: 46px; object-fit: contain; border-radius: 999px; background: white; }
+.brandLockup strong, .brandLockup span { overflow-wrap: anywhere; }
 .screen { overflow: auto; padding: 16px; scrollbar-width: none; background: radial-gradient(circle at top left, #ffffff 0, #eef3ee 42%, #f6f7f2 100%); }
 .screen::-webkit-scrollbar { display: none; }
 nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px max(12px, env(safe-area-inset-left)) max(10px, env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid #dce3dc; box-shadow: 0 -10px 24px #17201a0d; }
 nav button { background: transparent; text-transform: capitalize; color: #5a675e; }
 nav button.active { background: #0f5132; color: white; }
-.login { min-height: 100dvh; display: grid; place-items: center; padding: 20px; background: linear-gradient(145deg, #0b3f28 0%, #126640 48%, #fff 48%, #f5f7f2 100%); }
-.login form { width: min(440px, 100%); display: grid; gap: 12px; background: white; padding: 24px; border-radius: 8px; box-shadow: 0 22px 60px #0b3f2833; border: 1px solid #dfe6df; }
-.loginBrand { display: grid; gap: 12px; justify-items: center; margin-bottom: 4px; }
-.loginLogo { width: min(170px, 48vw); aspect-ratio: 1; object-fit: contain; filter: drop-shadow(0 10px 18px #0002); }
-.brandCardImage { width: 100%; max-height: 110px; object-fit: contain; border: 1px solid #e1e6e1; border-radius: 8px; background: #fff; padding: 8px; }
+.login { min-height: 100dvh; display: grid; place-items: center; padding: 20px; background: #eef3ee; }
+.login form { width: min(420px, 100%); display: grid; gap: 12px; background: white; padding: 22px; border-radius: 8px; border: 1px solid #dfe6df; }
+.loginBrand { display: grid; justify-items: center; margin-bottom: 2px; }
+.loginLogo { width: min(130px, 38vw); aspect-ratio: 1; object-fit: contain; }
 .grid { display: grid; gap: 16px; }
 .two { grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); align-items: start; }
 section, aside { display: grid; gap: 12px; background: #ffffffee; border: 1px solid #dfe6df; border-radius: 8px; padding: 16px; box-shadow: 0 12px 32px #17201a0c; }
